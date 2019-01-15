@@ -24,9 +24,11 @@ public class WriteThread extends Thread {
     private PublicKey svrkey;
     private SecretKey secretKey;
     private SecretKey secretServerKey;
+    private Socket socket;
 
     WriteThread(Socket socket, Client client) {
         this.client = client;
+        this.socket = socket;
 
         try {
             OutputStream output = socket.getOutputStream();
@@ -74,7 +76,12 @@ public class WriteThread extends Thread {
                 ex.printStackTrace();
             }
             if (text.equals("!exit")) {
-                System.exit(0);
+                try {
+                    socket.close();
+                    System.exit(0);
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
             } else if (text.equals("!change")) {
                 writer.println(Crypt.encrypt("p", svrkey, secretServerKey, client));
                 client.ptrkey = null;
