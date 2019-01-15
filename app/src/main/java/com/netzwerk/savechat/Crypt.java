@@ -1,9 +1,9 @@
 package com.netzwerk.savechat;
 
 import javax.crypto.*;
+import javax.crypto.spec.IvParameterSpec;
 
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
@@ -22,20 +22,24 @@ public class Crypt {
 
     public static String decrypt(String base64String, PrivateKey privateKey, Client commandline) {
         byte[] bytes = decode(base64String);
+        byte[] iv = new byte[16];
+        System.arraycopy(bytes, 0, iv, 0, 16);
         byte[] key = new byte[AES_LEN];
-        System.arraycopy(bytes, 0, key, 0, AES_LEN);
-        byte[] data = new byte[bytes.length - AES_LEN];
-        System.arraycopy(bytes, AES_LEN, data, 0, bytes.length - AES_LEN);
+        System.arraycopy(bytes, 16, key, 0, AES_LEN);
+        byte[] data = new byte[bytes.length - AES_LEN - 16];
+        System.arraycopy(bytes, 16 + AES_LEN, data, 0, bytes.length - AES_LEN - 16);
         String result = "";
         try {
+            IvParameterSpec ivspec = new IvParameterSpec(iv);
+
             Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             cipher.init(Cipher.UNWRAP_MODE, privateKey);
             SecretKey secKey = (SecretKey) cipher.unwrap(key, "AES", Cipher.SECRET_KEY);
 
-            cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-            cipher.init(Cipher.DECRYPT_MODE, secKey);
+            cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            cipher.init(Cipher.DECRYPT_MODE, secKey, ivspec);
             result = new String(cipher.doFinal(data), Charset.forName("UTF-16"));
-        } catch (NoSuchAlgorithmException ex) {
+        } catch (InvalidAlgorithmParameterException | NoSuchAlgorithmException ex) {
             commandline.println("WTF how did this happen??! " + ex.getMessage());
             ex.printStackTrace();
         } catch (NoSuchPaddingException | IllegalBlockSizeException | BadPaddingException | InvalidKeyException ex) {
@@ -61,19 +65,24 @@ public class Crypt {
     }
 
     public static String encrypt(String string, PublicKey publicKey, SecretKey secKey, Client commandline) {
+        byte[] iv = new byte[16];
         byte[] aes_key = new byte[AES_LEN];
         byte[] data = new byte[40];
         try {
+            // generate initialization vector
+            SecureRandom secureRandom = new SecureRandom();
+            secureRandom.nextBytes(iv);
+            IvParameterSpec ivspec = new IvParameterSpec(iv);
             // encrypt data
-            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-            cipher.init(Cipher.ENCRYPT_MODE, secKey);
+            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            cipher.init(Cipher.ENCRYPT_MODE, secKey, ivspec);
             data = cipher.doFinal(string.getBytes(Charset.forName("UTF-16")));
             // wrap key
             cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             cipher.init(Cipher.WRAP_MODE, publicKey);
             aes_key = cipher.wrap(secKey);
             System.out.println(Arrays.toString(aes_key));
-        } catch (NoSuchAlgorithmException ex) {
+        } catch (InvalidAlgorithmParameterException | NoSuchAlgorithmException ex) {
             commandline.println("WTF how did this happen??! " + ex.getMessage());
             ex.printStackTrace();
         } catch (IllegalBlockSizeException | BadPaddingException | NoSuchPaddingException | InvalidKeyException ex) {
@@ -82,9 +91,10 @@ public class Crypt {
         }
 
         // concatenate encrypted key
-        byte[] result = new byte[AES_LEN + data.length];
-        System.arraycopy(aes_key, 0, result, 0, AES_LEN);
-        System.arraycopy(data, 0, result, AES_LEN, data.length);
+        byte[] result = new byte[16 + AES_LEN + data.length];
+        System.arraycopy(iv, 0, result, 0, 16);
+        System.arraycopy(aes_key, 0, result, 16, AES_LEN);
+        System.arraycopy(data, 0, result, AES_LEN + 16, data.length);
 
         return encode(result);
     }
