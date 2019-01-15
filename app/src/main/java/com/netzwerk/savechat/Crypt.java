@@ -81,7 +81,6 @@ public class Crypt {
             cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             cipher.init(Cipher.WRAP_MODE, publicKey);
             aes_key = cipher.wrap(secKey);
-            System.out.println(Arrays.toString(aes_key));
         } catch (InvalidAlgorithmParameterException | NoSuchAlgorithmException ex) {
             commandline.println("WTF how did this happen??! " + ex.getMessage());
             ex.printStackTrace();
