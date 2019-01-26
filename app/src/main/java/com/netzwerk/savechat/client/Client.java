@@ -40,7 +40,7 @@ public class Client extends Thread {
     public void run() {
         // create working dir
         if (!new File(Environment.getExternalStorageDirectory().toString() + "/cmdchat").mkdirs()) {
-            // println("Could not create directory");
+            println("Could not create directory.");
         }
         // init connection
         hostname = "37.120.187.17";
@@ -64,7 +64,9 @@ public class Client extends Thread {
 
             println("Establishing encryption...");
             WriteThread writeThread = new WriteThread(socket, this);
-            ReadThread readThread = new ReadThread(socket, this, writeThread);
+            ReadThread readThread = new ReadThread(socket, this);
+            writeThread.setReadThread(readThread);
+            readThread.setWriteThread(writeThread);
 
             readThread.start();
             writeThread.start();

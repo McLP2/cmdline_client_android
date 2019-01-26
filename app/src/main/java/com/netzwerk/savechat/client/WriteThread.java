@@ -25,6 +25,8 @@ public class WriteThread extends Thread {
     private SecretKey secretKey;
     private SecretKey secretServerKey;
     private Socket socket;
+    private ReadThread readThread;
+    private final Object pauseLock = new Object();
 
     WriteThread(Socket socket, Client client) {
         this.client = client;
@@ -60,7 +62,29 @@ public class WriteThread extends Thread {
         return bytes;
     }
 
+    void setKey(PublicKey svrkey) {
+        this.svrkey = svrkey;
+        unfreeze();
+    }
+
+    private void getKey() {
+        client.println("Asking the server for a key...");
+        readThread.getKeyMode();
+        writer.println("getkey");
+    }
+
+    void setReadThread(ReadThread readThread) {
+        this.readThread = readThread;
+    }
+
     public void run() {
+        if (svrkey == null) {
+            getKey();
+            freeze();
+            client.println("If this is the correct fingerprint, enter !accept otherwise !exit.");
+            checkFingerprint();
+        }
+
         // send key
         loadKeypair();
 
@@ -76,12 +100,7 @@ public class WriteThread extends Thread {
                 ex.printStackTrace();
             }
             if (text.equals("!exit")) {
-                try {
-                    socket.close();
-                    System.exit(0);
-                } catch (IOException ex) {
-                    ex.printStackTrace();
-                }
+                exit();
             } else if (text.equals("!change")) {
                 writer.println(Crypt.encrypt("p", svrkey, secretServerKey, client));
                 client.ptrkey = null;
@@ -93,9 +112,68 @@ public class WriteThread extends Thread {
             } else {
                 writer.println(Crypt.encrypt("e" + Crypt.encrypt(text, client.ptrkey, secretKey, client), svrkey, secretServerKey, client));
             }
-
-
         } while (true);
+    }
+
+    private void freeze() {
+        synchronized (pauseLock) {
+            try {
+                pauseLock.wait();
+            } catch (InterruptedException ex) {
+                ex.printStackTrace();
+            }
+
+        }
+    }
+
+    private void unfreeze() {
+        synchronized (pauseLock) {
+            pauseLock.notifyAll(); // Unblocks thread
+        }
+    }
+
+    private void checkFingerprint() {
+        try {
+            String answer = client.reader.take();
+            switch (answer) {
+                case "!accept":
+                    saveServerKey();
+                    return;
+                case "!exit":
+                    exit();
+                    break;
+                default:
+                    client.println("Please enter !accept or !exit.");
+                    checkFingerprint();
+                    break;
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void exit() {
+        try {
+            socket.close();
+            System.exit(0);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private void saveServerKey() {
+        try {
+            File serverOldFile = new File(Environment.getExternalStorageDirectory().toString() + "/cmdchat/" + "svrkey.old");
+            File serverFile = new File(Environment.getExternalStorageDirectory().toString() + "/cmdchat/" + "svrkey");
+            if (serverFile.exists())
+                if (serverOldFile.exists())
+                    if (serverOldFile.delete())
+                        if (!serverFile.renameTo(serverOldFile))
+                            client.println("Error creating backup of old key-file.");
+            writeFile(serverFile, svrkey.getEncoded());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private void loadUserIdentifier() {
